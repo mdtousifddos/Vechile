@@ -2,9 +2,14 @@ from flask import Flask, jsonify, request
 import requests, re, binascii, json
 from Crypto.Cipher import AES
 import urllib3
+import time
 
 app = Flask(__name__)
 urllib3.disable_warnings()
+
+# Global session for faster requests
+session = requests.Session()
+session.verify = False
 
 def decrypt_cookie(a, b, c):
     a = binascii.unhexlify(a)
@@ -19,48 +24,73 @@ def solve_aes(html):
     return None
 
 def get_vehicle_data(vehicle_number):
-    session = requests.Session()
-    session.verify = False
+    start_time = time.time()
+    
     url = f"https://hydrashop.in.net/vehicle_owner_number.php?q={vehicle_number}"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36',
     }
     
     try:
-        response = session.get(url, headers=headers, timeout=15)
+        # Pehle request with timeout
+        response = session.get(url, headers=headers, timeout=10)
+        
+        # Agar AES challenge hai
         if "slowAES" in response.text:
             cookie_value = solve_aes(response.text)
             if cookie_value:
                 session.cookies.set("__test", cookie_value)
-                response = session.get(url, headers=headers, timeout=15)
+                response = session.get(url, headers=headers, timeout=10)
+        
+        response_time = round(time.time() - start_time, 2)
         
         if response.status_code == 200:
             mobile_match = re.search(r'[789]\d{9}', response.text)
             mobile_number = mobile_match.group() if mobile_match else None
+            
             return {
                 'success': True,
                 'vehicle_number': vehicle_number,
                 'owner_mobile_number': mobile_number,
-                'response_length': len(response.text)
+                'response_length': len(response.text),
+                'response_time_seconds': response_time,
+                'developer': 'SALAAR',
+                'api_version': '1.0'
             }
-        return {'success': False, 'error': f'HTTP {response.status_code}'}
+        return {
+            'success': False, 
+            'error': f'HTTP {response.status_code}',
+            'response_time_seconds': response_time,
+            'developer': 'SALAAR'
+        }
     except Exception as e:
-        return {'success': False, 'error': str(e)}
+        return {
+            'success': False, 
+            'error': str(e),
+            'developer': 'SALAAR'
+        }
 
 @app.route('/api/vehicle', methods=['GET'])
 def api_vehicle():
     number = request.args.get('number')
     if not number:
-        return jsonify({'error': 'Number parameter missing'})
+        return jsonify({
+            'error': 'Vehicle number parameter missing',
+            'usage': '/api/vehicle?number=UP64BB2558',
+            'developer': 'SALAAR'
+        })
+    
     result = get_vehicle_data(number)
     return jsonify(result)
 
 @app.route('/')
 def home():
     return jsonify({
-        'message': 'Vehicle Lookup API', 
+        'message': '🚗 Vehicle Lookup API', 
         'usage': '/api/vehicle?number=UP64BB2558',
-        'example': 'https://yourapp.onrender.com/api/vehicle?number=UP64BB2558'
+        'developer': 'SALAAR',
+        'example': 'https://vechile-o8ql.onrender.com/api/vehicle?number=UP64BB2558',
+        'note': 'Cloudflare AES Bypass Technology'
     })
 
 if __name__ == '__main__':
